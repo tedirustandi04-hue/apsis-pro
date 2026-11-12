@@ -1,25 +1,37 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth";
-import { generateSchema } from "@/lib/validations";
-import { generateQuestions } from "@/lib/ai/gemini";
+import { prisma } from "@/lib/prisma";
+import { createSession, verifyPassword } from "@/lib/auth";
+import { loginSchema } from "@/lib/validations";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ error: "Silakan login terlebih dahulu." }, { status: 401 });
-
   try {
-    const parsed = generateSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues.map(i => i.message).join(" ") }, { status: 400 });
+    const body = loginSchema.safeParse(await request.json());
+    if (!body.success) {
+      return NextResponse.json({ error: "Email atau password tidak valid." }, { status: 400 });
     }
-    const result = await generateQuestions(parsed.data);
-    return NextResponse.json({ ok: true, result });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Generasi gagal.";
-    const status = message.includes("GEMINI_API_KEY") ? 503 : 502;
-    return NextResponse.json({ error: message }, { status });
+
+    const user = await prisma.user.findUnique({
+      where: { email: body.data.email.toLowerCase() }
+    });
+
+    if (!user || !(await verifyPassword(body.data.password, user.passwordHash))) {
+      return NextResponse.json({ error: "Email atau password salah." }, { status: 401 });
+    }
+
+    await createSession({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role
+    });
+
+    return NextResponse.json({
+      ok: true,
+      user: { id: user.id, name: user.name, role: user.role }
+    });
+  } catch {
+    return NextResponse.json({ error: "Layanan login belum tersedia. Periksa konfigurasi server." }, { status: 500 });
   }
 }
