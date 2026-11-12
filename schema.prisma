@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  SCHOOL_ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum EducationLevel {
+  SD_MI
+  SMP_MTS
+  SMA_MA_SMK
+}
+
+enum LearningOutcomeType {
+  CP
+  TP
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  TRUE_FALSE
+  SHORT_ANSWER
+  ESSAY
+}
+
+enum CognitiveLevel {
+  C1
+  C2
+  C3
+  C4
+  C5
+  C6
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum AssessmentStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+}
+
+model User {
+  id           String         @id @default(cuid())
+  name         String
+  email        String         @unique
+  passwordHash String
+  role         UserRole       @default(TEACHER)
+  memberships  SchoolMember[]
+  assessments  Assessment[]   @relation("AssessmentAuthor")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model School {
+  id          String         @id @default(cuid())
+  name        String
+  npsn        String?
+  address     String?
+  members     SchoolMember[]
+  assessments Assessment[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([npsn])
+}
+
+model SchoolMember {
+  id       String   @id @default(cuid())
+  userId   String
+  schoolId String
+  role     UserRole @default(TEACHER)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school   School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+
+  @@unique([userId, schoolId])
+  @@index([schoolId, role])
+}
+
+model Curriculum {
+  id        String             @id @default(cuid())
+  name      String
+  year      String?
+  outcomes  LearningOutcome[]
+  createdAt DateTime           @default(now())
+}
+
+model Subject {
+  id        String             @id @default(cuid())
+  name      String
+  outcomes  LearningOutcome[]
+  assessments Assessment[]
+  createdAt DateTime           @default(now())
+
+  @@unique([name])
+}
+
+model LearningOutcome {
+  id           String               @id @default(cuid())
+  curriculumId String
+  subjectId    String
+  type         LearningOutcomeType
+  code         String?
+  phase        String?
+  grade        Int?
+  description  String               @db.Text
+  curriculum   Curriculum           @relation(fields: [curriculumId], references: [id], onDelete: Cascade)
+  subject      Subject              @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  questions    Question[]
+
+  @@index([curriculumId, subjectId, phase, grade])
+}
+
+model Assessment {
+  id          String           @id @default(cuid())
+  schoolId    String
+  createdById String
+  subjectId   String
+  title       String
+  educationLevel EducationLevel
+  phase       String
+  grade       Int
+  topic       String
+  status      AssessmentStatus @default(DRAFT)
+  totalItems  Int              @default(0)
+  school      School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  author      User             @relation("AssessmentAuthor", fields: [createdById], references: [id])
+  subject     Subject          @relation(fields: [subjectId], references: [id])
+  questions   Question[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([schoolId, createdAt])
+  @@index([createdById, status])
+}
+
+model Question {
+  id                 String         @id @default(cuid())
+  assessmentId       String
+  learningOutcomeId  String?
+  number             Int
+  type               QuestionType
+  cognitiveLevel     CognitiveLevel
+  difficulty         Difficulty
+  material           String
+  indicator          String
+  stimulus           String?        @db.Text
+  questionText       String         @db.Text
+  correctAnswer      Json
+  explanation        String?        @db.Text
+  scoringGuide       Json?
+  sourceReference    Json?
+  assessment         Assessment     @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  learningOutcome    LearningOutcome? @relation(fields: [learningOutcomeId], references: [id], onDelete: SetNull)
+  options            QuestionOption[]
+  createdAt          DateTime       @default(now())
+
+  @@unique([assessmentId, number])
+  @@index([assessmentId, cognitiveLevel, difficulty])
+}
+
+model QuestionOption {
+  id         String   @id @default(cuid())
+  questionId String
+  label      String
+  content    String   @db.Text
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, label])
+}
